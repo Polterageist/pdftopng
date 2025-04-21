@@ -1,0 +1,6 @@
+# Development requirements
+autopep8
+flake8
+black
+isort
+mypy
