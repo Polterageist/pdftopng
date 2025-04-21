@@ -54,5 +54,19 @@ python main.py Example.pdf output --dimensions 1920x1080 --tiles 4x3
 
 This will convert `Example.pdf` into PNG tiles with a total resolution of 1920x1080 pixels, split into a 4x3 grid, and save them in the `output` directory.
 
+## Running Tests
+
+To run the tests, make sure you have the development dependencies installed:
+
+```bash
+pip install -r dev-requirements.txt
+```
+
+Then run the tests using pytest:
+
+```bash
+pytest tests.py
+```
+
 ## License
 This project is proprietary
