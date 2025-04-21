@@ -3,11 +3,15 @@ from typing_extensions import Annotated
 from pathlib import Path
 from typing import Optional
 import re
+import asyncio
+from convert import convert
 
 
 def validate_dimensions(dimensions: str) -> tuple[int, int]:
     # Accepts x (latin), X (latin), х (cyrillic)
-    match = re.fullmatch(r"(\d+)[xXх](\d+)", dimensions.replace(",", "").replace(" ", ""))
+    match = re.fullmatch(
+        r"(\d+)[xXх](\d+)", dimensions.replace(",", "").replace(" ", "")
+    )
     if not match:
         raise typer.BadParameter(
             "Dimensions must be in the format WIDTHxHEIGHT, e.g., 1920x1080. Only digits and 'x' are allowed."
@@ -68,11 +72,14 @@ def main(
         destination_dir (str): Directory where the PNG images will be saved.
         dimensions (str): Dimensions of the whole image in format "widthxheight".
         tiles (str): Number of tiles in format "widthxheight".
+    Output:
+        The output will be PNG files named as {source_name_without_extension}-tile-x-y.png,
+        where x and y are tile indices. The number of PNG files and their resolutions
+        will match the requested grid and dimensions.
     """
     width, height = validate_dimensions(dimensions)
     n_tiles, m_tiles = validate_tiles(tiles)
-    # @TODO: Implement the PDF to PNG conversion logic here
-    pass
+    asyncio.run(convert(source, destination_dir, (width, height), (n_tiles, m_tiles)))
 
 
 if __name__ == "__main__":

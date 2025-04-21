@@ -2,8 +2,23 @@ from main import validate_dimensions, validate_tiles
 import pytest
 import sys
 import os
+from pathlib import Path
+from convert import convert
+import shutil
+from PIL import Image
+import re
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+
+@pytest.fixture(autouse=True)
+def cleanup_output_dirs(tmp_path):
+    output_dir = tmp_path / "output"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    yield
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
 
 
 @pytest.mark.parametrize(
@@ -77,3 +92,35 @@ def test_validate_tiles_valid(tiles):
 def test_validate_tiles_invalid(tiles):
     with pytest.raises(Exception):
         validate_tiles(tiles)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source, destination_dir, dimensions, tiles",
+    [
+        (Path("test_data/example.pdf"), Path("test_output"), (1920, 1080), (4, 3)),
+        (Path("test_data/example.pdf"), Path("test_output"), (131072, 131072), (32, 32)),
+    ],
+)
+async def test_convert_runs_without_error(source, destination_dir, dimensions, tiles):
+    await convert(source, destination_dir, dimensions, tiles)
+
+
+@pytest.mark.asyncio
+async def test_convert_output(tmp_path):
+    source = Path("test_data/example.pdf")
+    destination_dir = Path("test_output")
+    dimensions = (192, 96)
+    tiles = (3, 2)
+    await convert(source, destination_dir, dimensions, tiles)
+    base_name = source.stem
+    tile_w = dimensions[0] // tiles[0]
+    tile_h = dimensions[1] // tiles[1]
+    files = list(destination_dir.glob("*.png"))
+    assert len(files) == tiles[0] * tiles[1]
+    pattern = re.compile(rf"{base_name}-tile-(\\d+)-(\\d+).png")
+    for file in files:
+        match = pattern.fullmatch(file.name)
+        assert match is not None
+        img = Image.open(file)
+        assert img.size == (tile_w, tile_h)

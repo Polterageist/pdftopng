@@ -41,7 +41,11 @@ htmlcov/
 # Windows
 Thumbs.db
 
-# Ignore test data and results
+# Ignore any data and results
 *.pdf
 *.png
 output/
+test_output/
+
+# Except for the test data
+!test_data/*.pdf
