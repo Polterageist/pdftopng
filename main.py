@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 import re
 import asyncio
-from convert import convert
+from pdftopng.convert import convert
 
 
 def validate_dimensions(dimensions: str) -> tuple[int, int]:
