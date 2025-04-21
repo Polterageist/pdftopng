@@ -34,17 +34,25 @@ This project is a Command-Line Interface (CLI) tool for converting a PDF file co
    pip install -r requirements.txt
    ```
 
-## Usage
+## How to Run
 
-Run the CLI tool with the following command:
+To run the script, use the following command:
+
 ```bash
-python cli_tool.py --input Example.pdf --output output_folder --resolution 1920x1080 --tiles 4x3
+python main.py <source> <destination_dir> --dimensions <XxY> --tiles <NxM>
 ```
 
-- `--input`: Path to the input PDF file.
-- `--output`: Path to the output folder for PNG tiles.
-- `--resolution`: Total resolution of the output image in pixels (e.g., 1920x1080).
-- `--tiles`: Grid of tiles in NxM format (e.g., 4x3).
+- `<source>`: Path to the source PDF file (required).
+- `<destination_dir>`: Directory to save the generated PNG files (required).
+- `--dimensions <XxY>`: Total resolution of the output image in pixels (default: 131,072x131,072).
+- `--tiles <NxM>`: Grid of tiles in NxM format (default: 32x32).
+
+**Example:**
+```bash
+python main.py Example.pdf output --dimensions 1920x1080 --tiles 4x3
+```
+
+This will convert `Example.pdf` into PNG tiles with a total resolution of 1920x1080 pixels, split into a 4x3 grid, and save them in the `output` directory.
 
 ## License
 This project is proprietary
