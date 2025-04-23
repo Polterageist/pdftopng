@@ -34,6 +34,7 @@ htmlcov/
 
 # VS Code
 .vscode/
+.github/
 
 # macOS
 .DS_Store
@@ -44,8 +45,5 @@ Thumbs.db
 # Ignore any data and results
 *.pdf
 *.png
-output/
-test_output/
-
-# Except for the test data
-!test_data/*.pdf
+*.zip
+tests_temp/
