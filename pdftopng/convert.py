@@ -11,11 +11,104 @@ import io
 console = Console()
 
 
+def render_pdf_rect(
+    source: Path,
+    page_number: int,
+    destination_dir: Path,
+    file_name: str,
+    source_rect: Tuple[Tuple[float, float], Tuple[float, float]],
+    target_dimensions: Tuple[int, int],
+    colorspace: str = "RGB",
+    target_format: str = "PNG",
+):
+    """
+    Export a tile from a PDF page to an image file.
+    Paramters:
+        source (Path): Path to the source PDF file. Should exists
+        page_number (int): Page number to export the tile from.
+        destination_dir (Path): Directory to save the generated image files.
+        file_name (str): Bame for the output image file.
+        source_rect (Tuple[Tuple[float, float], Tuple[float, float]]): Coordinates of the rectangle to export.
+            Should be in the format ((x0, y0), (x1, y1)).
+        target_dimensions (Tuple[int, int]): Dimensions of the output image (width, height).
+        colorspace (str): Colorspace for the output image. Default is "RGB". Values can be "RGB" or "GRAY".
+        target_format (str): Format for the output image. Default is "PNG".
+    """
+    if not source.exists():
+        raise FileNotFoundError(f"Source file {source} does not exist.")
+
+    if not source.is_file():
+        raise ValueError(f"Source {source} is not a file.")
+
+    if not source.suffix.lower() == ".pdf":
+        raise ValueError(f"Source {source} is not a PDF file.")
+
+    if not destination_dir.exists():
+        destination_dir.mkdir(parents=True, exist_ok=True)
+
+    source_rect = pymupdf.Rect(
+        source_rect[0][0], source_rect[0][1], source_rect[1][0], source_rect[1][1]
+    )
+
+    mupdfcs = pymupdf.csRGB
+    if colorspace == "RGB":
+        mupdfcs = pymupdf.csRGB
+    elif colorspace == "GRAY":
+        mupdfcs = pymupdf.csGRAY
+    else:
+        raise ValueError(
+            f"Invalid colorspace {colorspace}. Supported values are 'RGB', 'GRAY'"
+        )
+
+    img = None
+    with open(source, "rb") as f:
+        doc = pymupdf.open(f)
+        if page_number >= len(doc) or page_number < 0:
+            raise ValueError(f"Page number {page_number} is out of range.")
+
+        page = doc[page_number]
+
+        if source_rect.x0 < 0 or source_rect.y0 < 0:
+            raise ValueError(
+                f"Source rectangle {source_rect} has negative coordinates."
+            )
+
+        if source_rect.x1 > page.rect.width or source_rect.y1 > page.rect.height:
+            raise ValueError(
+                f"Source rectangle {source_rect} is out of bounds for page {page_number}."
+            )
+
+        matrix = pymupdf.Matrix(
+            target_dimensions[0] / (source_rect.x1 - source_rect.x0),
+            target_dimensions[1] / (source_rect.y1 - source_rect.y0),
+        )
+        pix = page.get_pixmap(
+            clip=source_rect,
+            matrix=matrix,
+            colorspace=mupdfcs,
+            alpha=False,
+        )
+
+        if pix is None:
+            raise ValueError(
+                f"Failed to render tile from page {page_number} with rectangle {source_rect}."
+            )
+
+        img = pix.pil_image()
+        if img is None:
+            raise ValueError(
+                f"Failed to convert tile from page {page_number} with rectangle {source_rect} to PIL image."
+            )
+
+        doc.close()
+    img.save(destination_dir / file_name, format=target_format)
+
+
 async def convert(
     source: Path,
     destination_dir: Path,
     dimensions: Tuple[int, int],
-    tiles: Tuple[int, int]
+    tiles: Tuple[int, int],
 ) -> None:
     """
     Asynchronously convert a PDF file to PNG tiles.
