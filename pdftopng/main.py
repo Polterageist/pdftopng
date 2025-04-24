@@ -5,6 +5,7 @@ from typing import Optional
 import re
 import asyncio
 from pdftopng.convert import convert
+from rich.console import Console
 
 
 def validate_dimensions(dimensions: str) -> tuple[int, int]:
@@ -37,7 +38,7 @@ def validate_tiles(tiles: str) -> tuple[int, int]:
 
 def main(
     source: Annotated[
-        Optional[Path],
+        Path,
         typer.Argument(
             ...,
             help="Source pdf to be processed",
@@ -48,8 +49,12 @@ def main(
             resolve_path=True,
         ),
     ],
+    tiles: Annotated[str, typer.Argument(help="Num tiles NxM")],
+    dimensions: Annotated[
+        str, typer.Argument(help="Dimensions of the resulting image XxY. Should be divisible by tiles.")
+    ],
     destination_dir: Annotated[
-        Optional[Path],
+        Path,
         typer.Argument(
             help="Destination directory to save the generated png files",
             exists=False,
@@ -58,20 +63,35 @@ def main(
             writable=True,
             resolve_path=True,
         ),
-    ] = "outptut",
-    dimensions: Annotated[
-        str, typer.Option(help="Dimensions of the whole image XxY")
-    ] = "131072x131072",
-    tiles: Annotated[str, typer.Option(help="Num tiles nxm")] = "32x32",
+    ],
+    page_index: Annotated[
+        int,
+        typer.Option(
+            help="Page number to export the tile from. Default is 0 (first page).",
+        ),
+    ] = 0,
+    preserve_aspect: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to preserve the aspect ratio of the original PDF page. Default is True.",
+        ),
+    ] = True,
+    colorspace: Annotated[
+        str,
+        typer.Option(
+            help="Colorspace for the output image. Default is 'RGB'. Values can be 'RGB' or 'GRAY'.",
+        ),
+    ] = "RGB",
+    target_format: Annotated[
+        str,
+        typer.Option(
+            help="Format for the output image. Default is 'PNG'. Values can be 'PNG' or 'JPEG'.",
+        ),
+    ] = "PNG",
 ):
     """
     Convert a PDF file to PNG images with specified dimensions and tile size.
 
-    Args:
-        source (str): Path to the source PDF file.
-        destination_dir (str): Directory where the PNG images will be saved.
-        dimensions (str): Dimensions of the whole image in format "widthxheight".
-        tiles (str): Number of tiles in format "widthxheight".
     Output:
         The output will be PNG files named as {source_name_without_extension}-tile-x-y.png,
         where x and y are tile indices. The number of PNG files and their resolutions
@@ -79,7 +99,23 @@ def main(
     """
     width, height = validate_dimensions(dimensions)
     n_tiles, m_tiles = validate_tiles(tiles)
-    asyncio.run(convert(source, destination_dir, (width, height), (n_tiles, m_tiles)))
+    console = Console()
+    console.print(
+        f"Converting {source} to {destination_dir} with dimensions {width}x{height} and tiles {n_tiles}x{m_tiles}."
+    )
+    asyncio.run(
+        convert(
+            source,
+            page_index,
+            destination_dir,
+            (width, height),
+            (n_tiles, m_tiles),
+            preserve_aspect,
+            colorspace,
+            target_format,
+            lambda i, tiles: console.print(f"Rendered {i + 1}/{tiles} tiles."),
+        )
+    )
 
 
 if __name__ == "__main__":
