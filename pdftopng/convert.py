@@ -96,6 +96,10 @@ def render_pdf_rect(
             raise ValueError(
                 f"Failed to convert tile from page {page_number} with rectangle {source_rect} to PIL image."
             )
+        
+        if img.size != target_dimensions:
+            # Resize the image to the target dimensions to be sure
+            img = img.resize(target_dimensions)
 
         doc.close()
     img.save(destination_dir / file_name, format=target_format)

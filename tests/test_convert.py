@@ -224,6 +224,7 @@ def test_render_pdf_rect(
     [
         ((100, 100), (1000, 1000), (10, 10), False),
         ((100, 100), (1000, 100), (10, 10), True),
+        ((1024, 1024), (4096, 4096), (16, 16), True),
     ],
 )
 async def test_convert_output(source_dimensions, target_dimensions, tiles, preserve_aspect):
@@ -265,7 +266,6 @@ async def test_convert_output(source_dimensions, target_dimensions, tiles, prese
             if tile_x > max_tile_x:
                 actual_width = actual_width + img.width
                 max_tile_x = tile_x
-            
             if tile_y > max_tile_y:
                 actual_height = actual_height + img.height
                 max_tile_y = tile_y
