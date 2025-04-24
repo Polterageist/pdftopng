@@ -39,17 +39,21 @@ This project is a Command-Line Interface (CLI) tool for converting a PDF file co
 To run the script, use the following command:
 
 ```bash
-python main.py <source> <destination_dir> --dimensions <XxY> --tiles <NxM>
+python -m pdftopng.main <source> <tiles> <dimensions> <destination_dir> [options]
 ```
 
 - `<source>`: Path to the source PDF file (required).
+- `<tiles>`: Grid of tiles in NxM format (required, e.g., 32x32).
+- `<dimensions>`: Total resolution of the output image in pixels (required, e.g., 131072x131072).
 - `<destination_dir>`: Directory to save the generated PNG files (required).
-- `--dimensions <XxY>`: Total resolution of the output image in pixels (default: 131,072x131,072).
-- `--tiles <NxM>`: Grid of tiles in NxM format (default: 32x32).
+- `--page-index`: Page number to export from (default: 0).
+- `--preserve-aspect`: Preserve aspect ratio (default: True).
+- `--colorspace`: Output colorspace, 'RGB' or 'GRAY' (default: 'RGB').
+- `--target-format`: Output format, 'PNG' or 'JPEG' (default: 'PNG').
 
 **Example:**
 ```bash
-python main.py Example.pdf output --dimensions 1920x1080 --tiles 4x3
+python -m pdftopng.main example.pdf 4x3 1920x1080 output
 ```
 
 This will convert `Example.pdf` into PNG tiles with a total resolution of 1920x1080 pixels, split into a 4x3 grid, and save them in the `output` directory.
