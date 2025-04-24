@@ -3,10 +3,7 @@ import math
 from pathlib import Path
 from typing import Tuple
 import pymupdf
-from PIL import Image
 from rich.console import Console
-import aiofiles
-import io
 
 console = Console()
 
@@ -106,142 +103,109 @@ def render_pdf_rect(
 
 async def convert(
     source: Path,
+    page_index: int,
     destination_dir: Path,
-    dimensions: Tuple[int, int],
+    target_dimensions: Tuple[int, int],
     tiles: Tuple[int, int],
+    preserve_aspect: bool = True,
+    colorspace: str = "RGB",
+    target_format: str = "PNG",
+    progress_callback: callable = None,
+    **kwarg: dict,
 ) -> None:
     """
     Asynchronously convert a PDF file to PNG tiles.
 
     Args:
         source (Path): Path to the source PDF file.
+        page_index(int): Page number to export the tile from.
         destination_dir (Path): Directory to save the generated PNG files.
-        dimensions (Tuple[int, int]): Dimensions of the whole image (width, height).
+        target_dimensions (Tuple[int, int]): Dimensions of the whole image (width, height).
         tiles (Tuple[int, int]): Number of tiles (n, m).
-        progress_callback (Callable, optional): Callback to report progress.
+        preserve_aspect (bool): Whether to preserve the aspect ratio of the original PDF page.
+        If True, only width component of target_dimensions is used.
+        colorspace (str): Colorspace for the output image. Default is "RGB".
+            Values can be "RGB" or "GRAY".
+        target_format (str): Format for the output image. Default is "PNG".
+        progress_callback (callable): Optional callback function to report progress. Should accept
+            three arguments: current tile index, total number of tiles, and any additional keyword arguments.
+        kwarg (dict): Optional arguments to pass to the progress callback.
     """
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    base_name = source.stem
-    width, height = dimensions
-    n_tiles, m_tiles = tiles
-    if width % n_tiles != 0 or height % m_tiles != 0:
-        console.print(
-            f"Warning: Requested dimensions {width}x{height} are not divisible by the number of tiles "
-            "{n_tiles}x{m_tiles}. Rightmost and bottommost tiles will have empty space.",
-            style="yellow",
+    if (not source.exists() or not source.is_file()) or source.suffix.lower() != ".pdf":
+        raise ValueError(f"Source {source} is not a valid PDF file.")
+
+    if tiles[0] <= 0 or tiles[1] <= 0:
+        raise ValueError(f"Invalid number of tiles {tiles}. Must be positive integers.")
+
+    if target_dimensions[0] <= 0 or target_dimensions[1] <= 0:
+        raise ValueError(
+            f"Invalid target dimensions {target_dimensions}. Must be positive integers."
         )
 
-    tile_w = (width + (n_tiles - width % n_tiles)) // n_tiles
-    tile_h = (height + (m_tiles - height % m_tiles)) // m_tiles
+    if colorspace not in ["RGB", "GRAY"]:
+        raise ValueError(
+            f"Invalid colorspace {colorspace}. Supported values are 'RGB', 'GRAY'"
+        )
 
-    doc = pymupdf.open(str(source))
-    if len(doc) > 1:
-        console.print(
-            f"Warning: PDF contains {len(doc)} pages. Only the first page will be processed.",
-            style="yellow",
+    if target_format not in ["PNG", "JPEG", "BMP", "TIFF"]:
+        raise ValueError(
+            f"Invalid target format {target_format}. Supported values are 'PNG', 'JPEG', 'BMP', 'TIFF'"
         )
-    page = doc[0]
-    pdf_width, pdf_height = page.rect.width, page.rect.height
-    if (int(pdf_width) != width) or (int(pdf_height) != height):
-        console.print(
-            f"Warning: PDF page size is {int(pdf_width)}x{int(pdf_height)}, but requested output is {width}x{height}. "
-            "Images will be scaled.",
-            style="yellow",
-        )
-    pdf_aspect = pdf_width / pdf_height
+
+    source_dimensions = None
+    with open(source, "rb") as f:
+        doc = pymupdf.open(f)
+        if page_index >= len(doc) or page_index < 0:
+            raise ValueError(f"Page number {page_index} is out of range.")
+        page = doc[page_index]
+        source_dimensions = (page.rect.width, page.rect.height)
+        doc.close()
+
+    if source_dimensions is None:
+        raise ValueError(f"Failed to get dimensions of page {page_index} in {source}.")
+
+    source_aspect = source_dimensions[0] / source_dimensions[1]
+    width, height = target_dimensions
     req_aspect = width / height
-    if not math.isclose(pdf_aspect, req_aspect, rel_tol=1e-3):
-        console.print(
-            f"Warning: Aspect ratio mismatch. PDF aspect ratio is {pdf_aspect:.4f}, requested is {req_aspect:.4f}.",
-            style="yellow",
-        )
+    if not math.isclose(source_aspect, req_aspect, rel_tol=1e-3):
+        if preserve_aspect:
+            height = int(width / source_aspect)
+        else:
+            raise ValueError(
+                f"Aspect ratio mismatch. Source aspect ratio is {source_aspect:.4f}, requested is {req_aspect:.4f}."
+            )
 
-    frame_w = (pdf_width + (n_tiles - pdf_width % n_tiles)) / n_tiles
-    frame_h = (pdf_height + (m_tiles - pdf_height % m_tiles)) / m_tiles
-    scale_w, scale_h = tile_w / frame_w, tile_h / frame_h
+    base_name = source.stem
+    n_tiles, m_tiles = tiles
     total_tiles = n_tiles * m_tiles
 
-    console.print(
-        f"Converting {source} to {n_tiles}x{m_tiles}={total_tiles} PNG tiles "
-        "of size {tile_w}x{tile_h} with {n_tiles}x{m_tiles} tiles "
-        "with scale {scale_w}x{scale_h}...",
-        highlight=False,
-        soft_wrap=True,
-    )
+    tile_w = math.ceil(width // n_tiles)
+    tile_h = math.ceil(height // m_tiles)
 
-    processed = 0
+    source_tile_w = source_dimensions[0] / n_tiles
+    source_tile_h = source_dimensions[1] / m_tiles
     for x in range(n_tiles):
         for y in range(m_tiles):
-            tile_str = f"[{processed}/{total_tiles}]: Rendering tile ({x}, {y})..."
-            console.print(tile_str, end="", highlight=False, soft_wrap=True)
+            x0 = int(x * source_tile_w)
+            y0 = int(y * source_tile_h)
+            x1 = int((x + 1) * source_tile_w)
+            y1 = int((y + 1) * source_tile_h)
 
-            # Calculate the PDF coordinates for the tile
-            left_corner = x * frame_w
-            right_corner = (x + 1) * frame_w if x < n_tiles - 1 else pdf_width
-            top_corner = y * frame_h
-            bottom_corner = (
-                (y + 1) * pdf_height / m_tiles if y < m_tiles - 1 else pdf_height
+            file_name = f"{base_name}-tile-{x}-{y}.{target_format.lower()}"
+            tile_index = x * m_tiles + y
+            await asyncio.to_thread(
+                render_pdf_rect,
+                source,
+                page_index,
+                destination_dir,
+                file_name,
+                ((x0, y0), (x1, y1)),
+                (tile_w, tile_h),
+                colorspace=colorspace,
+                target_format=target_format,
             )
 
-            clip = pymupdf.Rect(left_corner, top_corner, right_corner, bottom_corner)
-            mat = pymupdf.Matrix(scale_w, scale_h)
-            pix = await asyncio.to_thread(
-                page.get_pixmap,
-                matrix=mat,
-                clip=clip,
-                alpha=False,
-                colorspace=pymupdf.csRGB,
-            )
-
-            if pix is None:
-                console.print(
-                    f"Error: Failed to render tile ({x}, {y}). Skipping...",
-                    style="red",
-                    highlight=False,
-                    soft_wrap=True,
+            if progress_callback:
+                progress_callback(
+                    tile_index, total_tiles, **kwarg
                 )
-                continue
-
-            img = pix.pil_image()
-            if img is None:
-                console.print(
-                    f"Error: Failed to convert tile ({x}, {y}) to PIL image. Skipping...",
-                    style="red",
-                    highlight=False,
-                    soft_wrap=True,
-                )
-                continue
-
-            # Expand the image to the tile size if necessary
-            if img.size != (tile_w, tile_h):
-                new_img = Image.new("RGB", (tile_w, tile_h), (255, 255, 255))
-                new_img.paste(img, (0, 0))
-                img = new_img
-
-            # Save the image to the temp buffer
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            await buf.drain() if hasattr(buf, "drain") else None
-            buf.seek(0)
-            data = buf.read()
-            buf.close()
-
-            # Save the image to the output directory
-            out_path = destination_dir / f"{base_name}-tile-{x}-{y}.png"
-            async with aiofiles.open(out_path, "wb") as f:
-                await f.write(data)
-
-            # Pretty print the progress
-            term_width = console.size.width
-            done_str = "done"
-            pad = max(0, term_width - len(tile_str) - len(done_str))
-            console.print(
-                f"\r{tile_str}{' ' * pad}{done_str}",
-                end="\n",
-                highlight=False,
-                soft_wrap=True,
-            )
-            processed += 1
-
-            await asyncio.sleep(0)
-    doc.close()

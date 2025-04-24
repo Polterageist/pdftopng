@@ -220,32 +220,60 @@ def test_render_pdf_rect(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "source_dimensions, target_dimensions, tiles",
+    "source_dimensions, target_dimensions, tiles, preserve_aspect",
     [
-        ((100, 100), (1000, 1000), (10, 10)),
+        ((100, 100), (1000, 1000), (10, 10), False),
+        ((100, 100), (1000, 100), (10, 10), True),
     ],
 )
-async def test_convert_output(source_dimensions, target_dimensions, tiles):
+async def test_convert_output(source_dimensions, target_dimensions, tiles, preserve_aspect):
     generate_test_pdf(source, source_dimensions, tiles)
     await asyncio.wait_for(
-        convert(source, destination_dir, target_dimensions, tiles), timeout=200
+        convert(source, 0, destination_dir, target_dimensions, tiles, preserve_aspect=preserve_aspect), timeout=60
     )
 
     assert destination_dir.exists()
     base_name = source.stem
     actual_width, actual_height = 0, 0
+
+    expected_width = target_dimensions[0]
+    expected_height = target_dimensions[1]
+    if preserve_aspect:
+        expected_height = int(
+            expected_width * (source_dimensions[1] / source_dimensions[0])
+        )
+
+    expected_tile_width = expected_width / tiles[0]
+    expected_tile_height = expected_height / tiles[1]
+
     files = list(destination_dir.glob("*.png"))
     assert len(files) == tiles[0] * tiles[1]
-    pattern = re.compile(rf"{base_name}-tile-(\\d+)-(\\d+).png")
+
+    pattern = re.compile(rf"{base_name}-tile-(\d+)-(\d+)\.png")
+    max_tile_x = max_tile_y = -1
     for file in files:
         match = pattern.fullmatch(file.name)
         assert match is not None
         with Image.open(file) as img:
             assert img.format == "PNG"
             assert img.mode == "RGB"
+            assert img.size == (expected_tile_width, expected_tile_height)
 
-            actual_height += img.width
-            actual_width += img.height
+            # Check if the image color matches the expected color
+            tile_x = int(match.group(1))
+            tile_y = int(match.group(2))
+            if tile_x > max_tile_x:
+                actual_width = actual_width + img.width
+                max_tile_x = tile_x
+            
+            if tile_y > max_tile_y:
+                actual_height = actual_height + img.height
+                max_tile_y = tile_y
 
-    assert actual_width == target_dimensions[0]
-    assert actual_height == target_dimensions[1]
+            tile_index = tile_x * tiles[1] + tile_y
+            index_bytes = tile_index.to_bytes(3, byteorder="big")
+            expected_color = tuple(index_bytes)
+            assert is_image_filled_with(img, expected_color)
+
+    assert actual_width == expected_width
+    assert actual_height == expected_height
