@@ -1,7 +1,6 @@
 import typer
 from typing_extensions import Annotated
 from pathlib import Path
-from typing import Optional
 import re
 import asyncio
 from pdftopng.convert import convert
@@ -23,19 +22,6 @@ def validate_dimensions(dimensions: str) -> tuple[int, int]:
     return width, height
 
 
-def validate_tiles(tiles: str) -> tuple[int, int]:
-    # Accepts x (latin), X (latin), х (cyrillic)
-    match = re.fullmatch(r"(\d+)[xXх](\d+)", tiles.replace(" ", ""))
-    if not match:
-        raise typer.BadParameter(
-            "Tiles must be in the format NxM, e.g., 4x3. Only digits and 'x' are allowed."
-        )
-    n, m = int(match.group(1)), int(match.group(2))
-    if n <= 0 or m <= 0:
-        raise typer.BadParameter("Tiles must be positive integers.")
-    return n, m
-
-
 def main(
     source: Annotated[
         Path,
@@ -49,10 +35,6 @@ def main(
             resolve_path=True,
         ),
     ],
-    tiles: Annotated[str, typer.Argument(help="Num tiles NxM")],
-    dimensions: Annotated[
-        str, typer.Argument(help="Dimensions of the resulting image XxY. Should be divisible by tiles.")
-    ],
     destination_dir: Annotated[
         Path,
         typer.Argument(
@@ -64,18 +46,20 @@ def main(
             resolve_path=True,
         ),
     ],
+    tiles: Annotated[str, typer.Argument(help="Num tiles NxM")],
+    tile_size: Annotated[str, typer.Argument(help="Dimensions of the one tile XxY.")],
+    preserve_aspect: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to preserve the aspect ratio of the source image. Default is True.",
+        ),
+    ] = True,
     page_index: Annotated[
         int,
         typer.Option(
             help="Page number to export the tile from. Default is 0 (first page).",
         ),
     ] = 0,
-    preserve_aspect: Annotated[
-        bool,
-        typer.Option(
-            help="Whether to preserve the aspect ratio of the original PDF page. Default is True.",
-        ),
-    ] = True,
     colorspace: Annotated[
         str,
         typer.Option(
@@ -97,18 +81,19 @@ def main(
         where x and y are tile indices. The number of PNG files and their resolutions
         will match the requested grid and dimensions.
     """
-    width, height = validate_dimensions(dimensions)
-    n_tiles, m_tiles = validate_tiles(tiles)
+    tile_width, tile_height = validate_dimensions(tile_size)
+    n_tiles, m_tiles = validate_dimensions(tiles)
     console = Console()
     console.print(
-        f"Converting {source} to {destination_dir} with dimensions {width}x{height} and tiles {n_tiles}x{m_tiles}."
+        f"Converting {source} to {destination_dir} with dimensions {tile_width}x{tile_height} "
+        f"and tiles {n_tiles}x{m_tiles}."
     )
     asyncio.run(
         convert(
             source,
             page_index,
             destination_dir,
-            (width, height),
+            (tile_width, tile_height),
             (n_tiles, m_tiles),
             preserve_aspect,
             colorspace,

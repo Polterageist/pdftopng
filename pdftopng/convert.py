@@ -15,6 +15,7 @@ def render_pdf_rect(
     file_name: str,
     source_rect: Tuple[Tuple[float, float], Tuple[float, float]],
     target_dimensions: Tuple[int, int],
+    oob_color: Tuple[int, int, int] | Tuple[int] = (255, 255, 255),
     colorspace: str = "RGB",
     target_format: str = "PNG",
 ):
@@ -26,7 +27,10 @@ def render_pdf_rect(
         destination_dir (Path): Directory to save the generated image files.
         file_name (str): Bame for the output image file.
         source_rect (Tuple[Tuple[float, float], Tuple[float, float]]): Coordinates of the rectangle to export.
-            Should be in the format ((x0, y0), (x1, y1)).
+        Should be in the format ((x0, y0), (x1, y1)).
+        If out of bounds, extending part of image will be filled with oob_color.
+        oob_color (Tuple[int, int, int] | Tuple[int]): Color to fill the out of bounds area.
+        Default is (255, 255, 255). Amount of values should be 3 or 1 depending on colorspace.
         target_dimensions (Tuple[int, int]): Dimensions of the output image (width, height).
         colorspace (str): Colorspace for the output image. Default is "RGB". Values can be "RGB" or "GRAY".
         target_format (str): Format for the output image. Default is "PNG".
@@ -96,7 +100,7 @@ def render_pdf_rect(
             raise ValueError(
                 f"Failed to convert tile from page {page_number} with rectangle {source_rect} to PIL image."
             )
-        
+
         if img.size != target_dimensions:
             # Resize the image to the target dimensions to be sure
             img = img.resize(target_dimensions)
@@ -109,7 +113,7 @@ async def convert(
     source: Path,
     page_index: int,
     destination_dir: Path,
-    target_dimensions: Tuple[int, int],
+    tile_size: Tuple[int, int],
     tiles: Tuple[int, int],
     preserve_aspect: bool = True,
     colorspace: str = "RGB",
@@ -126,8 +130,7 @@ async def convert(
         destination_dir (Path): Directory to save the generated PNG files.
         target_dimensions (Tuple[int, int]): Dimensions of the whole image (width, height).
         tiles (Tuple[int, int]): Number of tiles (n, m).
-        preserve_aspect (bool): Whether to preserve the aspect ratio of the original PDF page.
-        If True, only width component of target_dimensions is used.
+        preserve_aspect (bool): Whether to preserve the aspect ratio of the source image.
         colorspace (str): Colorspace for the output image. Default is "RGB".
             Values can be "RGB" or "GRAY".
         target_format (str): Format for the output image. Default is "PNG".
@@ -141,9 +144,9 @@ async def convert(
     if tiles[0] <= 0 or tiles[1] <= 0:
         raise ValueError(f"Invalid number of tiles {tiles}. Must be positive integers.")
 
-    if target_dimensions[0] <= 0 or target_dimensions[1] <= 0:
+    if tile_size[0] <= 0 or tile_size[1] <= 0:
         raise ValueError(
-            f"Invalid target dimensions {target_dimensions}. Must be positive integers."
+            f"Invalid target dimensions {tile_size}. Must be positive integers."
         )
 
     if colorspace not in ["RGB", "GRAY"]:
@@ -168,26 +171,28 @@ async def convert(
     if source_dimensions is None:
         raise ValueError(f"Failed to get dimensions of page {page_index} in {source}.")
 
-    source_aspect = source_dimensions[0] / source_dimensions[1]
-    width, height = target_dimensions
-    req_aspect = width / height
-    if not math.isclose(source_aspect, req_aspect, rel_tol=1e-3):
-        if preserve_aspect:
-            height = int(width / source_aspect)
-        else:
-            raise ValueError(
-                f"Aspect ratio mismatch. Source aspect ratio is {source_aspect:.4f}, requested is {req_aspect:.4f}."
-            )
-
-    base_name = source.stem
+    tile_w, tile_h = tile_size
     n_tiles, m_tiles = tiles
-    total_tiles = n_tiles * m_tiles
+    total_width, total_height = tile_w * n_tiles, tile_h * m_tiles
+    scale_w = total_width / source_dimensions[0]
+    scale_h = total_height / source_dimensions[1]
 
-    tile_w = math.ceil(width // n_tiles)
-    tile_h = math.ceil(height // m_tiles)
+    if not math.isclose(scale_w, scale_h, rel_tol=1e-3) and preserve_aspect:
+        if scale_w < scale_h:
+            scale_h = scale_w
+            total_height = int(source_dimensions[1] * scale_w)
+            m_tiles = math.ceil(total_height / tile_h)
+        else:
+            scale_w = scale_h
+            total_width = int(source_dimensions[0] * scale_h)
+            n_tiles = math.ceil(total_width / tile_w)
 
     source_tile_w = source_dimensions[0] / n_tiles
     source_tile_h = source_dimensions[1] / m_tiles
+
+    base_name = source.stem
+    total_tiles = n_tiles * m_tiles
+
     for x in range(n_tiles):
         for y in range(m_tiles):
             x0 = int(x * source_tile_w)
@@ -210,6 +215,4 @@ async def convert(
             )
 
             if progress_callback:
-                progress_callback(
-                    tile_index, total_tiles, **kwarg
-                )
+                progress_callback(tile_index, total_tiles, **kwarg)

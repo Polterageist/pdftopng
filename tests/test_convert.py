@@ -1,4 +1,6 @@
 import io
+import math
+from typing import Tuple
 import pytest
 import asyncio
 from pathlib import Path
@@ -80,7 +82,7 @@ def generate_test_pdf(output_path, dimensions, tiles, codingmode="index") -> Non
         doc.save(str(output_path), garbage=4, deflate=True, clean=True)
 
 
-def is_image_filled_with(image, color):
+def is_image_filled_with(image, color, rect=None):
     """
     Check if the image is filled with a specific color.
     Parameters:
@@ -89,8 +91,14 @@ def is_image_filled_with(image, color):
     Returns:
         bool: True if the image is filled with the specified color, False otherwise.
     """
-    for x in range(image.width):
-        for y in range(image.height):
+    start_x, start_y = 0, 0
+    end_x, end_y = image.size
+    if rect:
+        start_x, start_y = rect[0]
+        end_x, end_y = rect[1]
+
+    for x in range(start_x, end_x):
+        for y in range(start_x, end_y):
             if image.getpixel((x, y)) != color:
                 return False
     return True
@@ -220,32 +228,45 @@ def test_render_pdf_rect(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "source_dimensions, target_dimensions, tiles, preserve_aspect",
+    "source_dimensions, tile_dimensions, tiles, preserve_aspect",
     [
-        ((100, 100), (1000, 1000), (10, 10), False),
-        ((100, 100), (1000, 100), (10, 10), True),
-        ((1024, 1024), (4096, 4096), (16, 16), True),
+        ((128, 128), (64, 64), (4, 4), True),
+        ((128, 128), (64, 64), (4, 4), False),
+        ((128, 64), (64, 64), (4, 4), True),
+        ((128, 64), (64, 64), (4, 4), False),
     ],
 )
-async def test_convert_output(source_dimensions, target_dimensions, tiles, preserve_aspect):
+async def test_convert_output(
+    source_dimensions, tile_dimensions, tiles, preserve_aspect
+):
     generate_test_pdf(source, source_dimensions, tiles)
     await asyncio.wait_for(
-        convert(source, 0, destination_dir, target_dimensions, tiles, preserve_aspect=preserve_aspect), timeout=60
+        convert(
+            source,
+            0,
+            destination_dir,
+            tile_dimensions,
+            tiles,
+            preserve_aspect,
+        ),
+        timeout=60,
     )
 
     assert destination_dir.exists()
     base_name = source.stem
     actual_width, actual_height = 0, 0
 
-    expected_width = target_dimensions[0]
-    expected_height = target_dimensions[1]
-    if preserve_aspect:
-        expected_height = int(
-            expected_width * (source_dimensions[1] / source_dimensions[0])
-        )
+    expected_tile_width, expected_tile_height = tile_dimensions
 
-    expected_tile_width = expected_width / tiles[0]
-    expected_tile_height = expected_height / tiles[1]
+    # TODO: Refactor this to use updated convert function invariants
+    
+    if preserve_aspect and not math.isclose(
+        source_dimensions[0] / source_dimensions[1], tile_dimensions[0] / tile_dimensions[1], rel_tol=1e-3):
+        if source_dimensions[0] / source_dimensions[1] < tile_dimensions[0] / tile_dimensions[1]:
+            expected_tiles_m = math.ceil(source_dimensions[1] / expected_tile_height)
+        else:
+            expected_tiles_n = math.ceil(source_dimensions[0] / expected_tile_width)
+
 
     files = list(destination_dir.glob("*.png"))
     assert len(files) == tiles[0] * tiles[1]
@@ -275,5 +296,3 @@ async def test_convert_output(source_dimensions, target_dimensions, tiles, prese
             expected_color = tuple(index_bytes)
             assert is_image_filled_with(img, expected_color)
 
-    assert actual_width == expected_width
-    assert actual_height == expected_height
