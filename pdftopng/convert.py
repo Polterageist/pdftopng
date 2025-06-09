@@ -72,17 +72,21 @@ def render_pdf_rect(
         if source_rect.x0 < 0 or source_rect.y0 < 0:
             raise ValueError(
                 f"Source rectangle {source_rect} has negative coordinates."
-            )
-
+            )        
         if source_rect.x1 > page.rect.width or source_rect.y1 > page.rect.height:
             raise ValueError(
                 f"Source rectangle {source_rect} is out of bounds for page {page_number}."
             )
 
-        matrix = pymupdf.Matrix(
-            target_dimensions[0] / (source_rect.x1 - source_rect.x0),
-            target_dimensions[1] / (source_rect.y1 - source_rect.y0),
-        )
+        # Calculate scaling factors for the clipped region
+        clip_width = source_rect.x1 - source_rect.x0
+        clip_height = source_rect.y1 - source_rect.y0
+        
+        # Create matrix that scales the clipped region to target dimensions
+        scale_x = target_dimensions[0] / clip_width
+        scale_y = target_dimensions[1] / clip_height
+        
+        matrix = pymupdf.Matrix(scale_x, scale_y)
         pix = page.get_pixmap(
             clip=source_rect,
             matrix=matrix,
@@ -195,10 +199,19 @@ async def convert(
 
     for x in range(n_tiles):
         for y in range(m_tiles):
-            x0 = int(x * source_tile_w)
-            y0 = int(y * source_tile_h)
-            x1 = int((x + 1) * source_tile_w)
-            y1 = int((y + 1) * source_tile_h)
+            # Calculate precise coordinates to avoid gaps/overlaps
+            x0 = round(x * source_tile_w)
+            y0 = round(y * source_tile_h)
+            # For the last tile, use the exact boundary to avoid gaps
+            if x == n_tiles - 1:
+                x1 = source_dimensions[0]
+            else:
+                x1 = round((x + 1) * source_tile_w)
+
+            if y == m_tiles - 1:
+                y1 = source_dimensions[1]
+            else:
+                y1 = round((y + 1) * source_tile_h)
 
             file_name = f"{base_name}-tile-{x}-{y}.{target_format.lower()}"
             tile_index = x * m_tiles + y
