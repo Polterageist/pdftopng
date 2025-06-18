@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Tuple
 import pymupdf
 from rich.console import Console
+from .ktx import KTX2Converter
 
 console = Console()
 
@@ -229,3 +230,38 @@ async def convert(
 
             if progress_callback:
                 progress_callback(tile_index, total_tiles, **kwarg)
+
+
+def batch_convert_png_to_ktx2(
+    input_dir: Path,
+    output_dir: Path,
+    pattern: str = "*.png",
+    generate_mipmaps: bool = True,
+    compression: str = None,
+    quality: str = None,
+    **kwargs,
+) -> dict:
+    """
+    Batch convert PNG files in input_dir to KTX2 with mipmaps using KTX2Converter.
+
+    Args:
+        input_dir (Path): Directory with PNG files.
+        output_dir (Path): Directory for KTX2 output.
+        pattern (str): Glob pattern for PNG files.
+        generate_mipmaps (bool): Generate mipmaps (default True).
+        compression (str): Compression type ('etc1s', 'uastc', None).
+        quality (str): Compression quality for ETC1S (0-255).
+        **kwargs: Additional arguments for KTX2Converter.convert().
+    Returns:
+        dict: {filename: success}
+    """
+    converter = KTX2Converter()
+    return converter.batch_convert(
+        str(input_dir),
+        str(output_dir),
+        pattern=pattern,
+        generate_mipmaps=generate_mipmaps,
+        compression=compression,
+        quality=quality,
+        **kwargs,
+    )

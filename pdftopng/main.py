@@ -22,7 +22,11 @@ def validate_dimensions(dimensions: str) -> tuple[int, int]:
     return width, height
 
 
-def main(
+app = typer.Typer()
+
+
+@app.command()
+def render_tiles(
     source: Annotated[
         Path,
         typer.Argument(
@@ -74,25 +78,21 @@ def main(
     ] = "PNG",
 ):
     """
-    Convert a PDF file to PNG images with specified dimensions and tile size.
-
-    Output:
-        The output will be PNG files named as {source_name_without_extension}-tile-x-y.png,
-        where x and y are tile indices. The number of PNG files and their resolutions
-        will match the requested grid and dimensions.
+    Render PDF to PNG tiles only.
     """
     tile_width, tile_height = validate_dimensions(tile_size)
     n_tiles, m_tiles = validate_dimensions(tiles)
     console = Console()
+    raw_tiles_dir = destination_dir / "raw_tiles"
     console.print(
-        f"Converting {source} to {destination_dir} with dimensions {tile_width}x{tile_height} "
+        f"Converting {source} to {raw_tiles_dir} with dimensions {tile_width}x{tile_height} "
         f"and tiles {n_tiles}x{m_tiles}."
     )
     asyncio.run(
         convert(
             source,
             page_index,
-            destination_dir,
+            raw_tiles_dir,
             (tile_width, tile_height),
             (n_tiles, m_tiles),
             preserve_aspect,
@@ -101,7 +101,50 @@ def main(
             lambda i, tiles: console.print(f"Rendered {i + 1}/{tiles} tiles."),
         )
     )
+    console.print(f"Done rendering tiles.")
+
+
+@app.command()
+def generate_mips(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory with PNG tiles (raw_tiles)",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            resolve_path=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory to save KTX2 mips",
+            exists=False,
+            file_okay=False,
+            dir_okay=True,
+            writable=True,
+            resolve_path=True,
+        ),
+    ],
+):
+    """
+    Convert PNG tiles to KTX2 with mipmaps only.
+    """
+    console = Console()
+    console.print(
+        f"Converting PNG tiles from {input_dir} to KTX2 with mipmaps in {output_dir}..."
+    )
+    from pdftopng.convert import batch_convert_png_to_ktx2
+
+    result = batch_convert_png_to_ktx2(
+        input_dir,
+        output_dir,
+    )
+    success_count = sum(result.values())
+    console.print(f"Converted {success_count}/{len(result)} PNG tiles to KTX2.")
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    app()

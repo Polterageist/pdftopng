@@ -47,3 +47,4 @@ Thumbs.db
 *.png
 *.zip
 tests_temp/
+output/
