@@ -3,6 +3,8 @@ from typing import Dict, List
 from pyktx import KtxTexture2, KtxTextureCreateInfo, KtxTextureCreateStorage, VkFormat, KtxBasisParams
 from PIL import Image
 from math import log2
+import concurrent.futures
+import multiprocessing
 
 
 def generate_mips(source: Image.Image) -> List[Image.Image]:
@@ -16,6 +18,20 @@ def generate_mips(source: Image.Image) -> List[Image.Image]:
     return result
 
 
+def convert_one_file(args):
+    cls, file_path, input_dir, output_dir, convert_kwargs = args
+    relative_path = file_path.relative_to(input_dir)
+    output_file = output_dir / relative_path.with_suffix(".ktx2")
+    print(f"[START] Converting: {file_path} -> {output_file}")
+    converter = cls()
+    success = converter.convert(str(file_path), str(output_file), **convert_kwargs)
+    if success:
+        print(f"[OK]    {file_path} -> {output_file}")
+    else:
+        print(f"[FAIL]  {file_path} -> {output_file}")
+    return str(relative_path), success
+
+
 class KTX2Converter:
     """PNG -> KTX2 converter using pyktx (libktx)"""
 
@@ -26,6 +42,7 @@ class KTX2Converter:
         self,
         input_path: str,
         output_path: str,
+        **kwargs
     ) -> bool:
         """
         Converts PNG to KTX2 using pyktx
@@ -70,28 +87,20 @@ class KTX2Converter:
         self, input_dir: str, output_dir: str, pattern: str = "*.png", **convert_kwargs
     ) -> Dict[str, bool]:
         """
-        Batch conversion of files
-
-        Args:
-            input_dir: Input directory
-            output_dir: Output directory
-            pattern: Pattern for finding files
-            **convert_kwargs: Arguments for convert()
-
-        Returns:
-            Dictionary {filename: success}
+        Batch conversion of files (parallelized, safe for multiprocessing)
         """
         input_path = Path(input_dir)
         output_path = Path(output_dir)
-
+        files = list(input_path.glob(pattern))
         results = {}
-
-        for file_path in input_path.glob(pattern):
-            relative_path = file_path.relative_to(input_path)
-            output_file = output_path / relative_path.with_suffix(".ktx2")
-
-            print(f"Converting: {file_path} -> {output_file}")
-            success = self.convert(str(file_path), str(output_file))
-            results[str(relative_path)] = success
-
+        num_workers = multiprocessing.cpu_count()
+        args_list = [
+            (self.__class__, file_path, input_path, output_path, convert_kwargs)
+            for file_path in files
+        ]
+        print(f"[BATCH] Starting batch conversion: {len(files)} files, {num_workers} workers")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+            for rel, success in executor.map(convert_one_file, args_list):
+                results[rel] = success
+        print(f"[BATCH] Done. Success: {sum(results.values())}, Fail: {len(results)-sum(results.values())}")
         return results
