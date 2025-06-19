@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 // Simple camera controls replacement for OrbitControls
 class SimpleControls {
     constructor(camera, domElement) {

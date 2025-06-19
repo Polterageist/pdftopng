@@ -21,64 +21,53 @@ class KTXLoader {
     parse(buffer) {
         // KTX file format parsing
         const data = new Uint8Array(buffer);
-        
-        // Check KTX identifier
-        const identifier = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
-        for (let i = 0; i < identifier.length; i++) {
-            if (data[i] !== identifier[i]) {
-                throw new Error('Invalid KTX file');
+        // Check KTX1 or KTX2 identifier
+        const ktx1 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
+        const ktx2 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
+        let isKTX2 = true;
+        for (let i = 0; i < ktx2.length; i++) {
+            if (data[i] !== ktx2[i]) {
+                isKTX2 = false;
+                break;
             }
         }
-        
-        // Read header
-        const littleEndian = new Uint32Array(buffer, 12, 1)[0] === 0x04030201;
-        const view = new DataView(buffer);
-        
-        const glType = view.getUint32(16, littleEndian);
-        const glTypeSize = view.getUint32(20, littleEndian);
-        const glFormat = view.getUint32(24, littleEndian);
-        const glInternalFormat = view.getUint32(28, littleEndian);
-        const glBaseInternalFormat = view.getUint32(32, littleEndian);
-        const pixelWidth = view.getUint32(36, littleEndian);
-        const pixelHeight = view.getUint32(40, littleEndian);
-        const pixelDepth = view.getUint32(44, littleEndian);
-        const numberOfArrayElements = view.getUint32(48, littleEndian);
-        const numberOfFaces = view.getUint32(52, littleEndian);
-        const numberOfMipmapLevels = view.getUint32(56, littleEndian);
-        const bytesOfKeyValueData = view.getUint32(60, littleEndian);
-        
-        // Skip key/value data
-        let offset = 64 + bytesOfKeyValueData;
-        
-        // For compressed textures, create a CompressedTexture
-        if (glType === 0) { // Compressed
-            const texture = new THREE.CompressedTexture();
-            texture.image = { width: pixelWidth, height: pixelHeight };
-            texture.mipmaps = [];
-            
-            // Read mipmap levels
-            for (let level = 0; level < numberOfMipmapLevels; level++) {
-                const imageSize = view.getUint32(offset, littleEndian);
-                offset += 4;
-                
-                const levelData = new Uint8Array(buffer, offset, imageSize);
-                texture.mipmaps.push({
-                    data: levelData,
-                    width: Math.max(1, pixelWidth >> level),
-                    height: Math.max(1, pixelHeight >> level)
-                });
-                
-                offset += imageSize;
-                // Pad to 4-byte boundary
-                offset = (offset + 3) & ~3;
+        let isKTX1 = true;
+        for (let i = 0; i < ktx1.length; i++) {
+            if (data[i] !== ktx1[i]) {
+                isKTX1 = false;
+                break;
             }
-            
-            // Set format based on glInternalFormat
-            texture.format = this.getThreeFormat(glInternalFormat);
-            texture.type = THREE.UnsignedByteType;
+        }
+        if (!isKTX1 && !isKTX2) {
+            throw new Error('Invalid KTX file');
+        }
+        if (isKTX2) {
+            // KTX2 header parsing (see spec)
+            const view = new DataView(buffer);
+            const pixelWidth = view.getUint32(36, true);
+            const pixelHeight = view.getUint32(40, true);
+            const numberOfMipmapLevels = view.getUint32(52, true);
+            // Supercompression, DFD, etc. are ignored for simple ETC1S/ETC2
+            // Level index table starts at offset 68
+            let levelIndexOffset = 68;
+            let mipmaps = [];
+            let width = pixelWidth;
+            let height = pixelHeight;
+            for (let level = 0; level < numberOfMipmapLevels; level++) {
+                const levelOffset = Number(view.getBigUint64(levelIndexOffset + 8 * level, true));
+                const levelLength = Number(view.getBigUint64(levelIndexOffset + 8 * level + 8 * numberOfMipmapLevels, true));
+                const levelData = new Uint8Array(buffer, levelOffset, levelLength);
+                mipmaps.push({
+                    data: levelData,
+                    width: Math.max(1, width >> level),
+                    height: Math.max(1, height >> level)
+                });
+            }
+            // glInternalFormat is not present in KTX2, use vkFormat
+            const vkFormat = view.getUint32(28, true);
+            const texture = new THREE.CompressedTexture(mipmaps, pixelWidth, pixelHeight, this.getThreeFormat(vkFormat));
             texture.generateMipmaps = false;
             texture.needsUpdate = true;
-            
             return texture;
         } else {
             // Uncompressed texture - convert to regular DataTexture
@@ -107,13 +96,12 @@ class KTXLoader {
             case 0x1908: return THREE.RGBAFormat; // GL_RGBA
             case 0x1909: return THREE.LuminanceFormat; // GL_LUMINANCE
             case 0x190A: return THREE.LuminanceAlphaFormat; // GL_LUMINANCE_ALPHA
-            
             // Compressed formats
             case 0x83F0: return THREE.RGBA_S3TC_DXT1_Format; // GL_COMPRESSED_RGB_S3TC_DXT1_EXT
             case 0x83F1: return THREE.RGBA_S3TC_DXT1_Format; // GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
             case 0x83F2: return THREE.RGBA_S3TC_DXT3_Format; // GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
             case 0x83F3: return THREE.RGBA_S3TC_DXT5_Format; // GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
-            
+            case 0x9274: return THREE.RGB_ETC2_Format; // GL_COMPRESSED_RGB8_ETC2 (ETC2/ETC1S)
             default:
                 console.warn('Unknown KTX format:', glFormat);
                 return THREE.RGBAFormat;
