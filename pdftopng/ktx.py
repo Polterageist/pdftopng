@@ -60,6 +60,8 @@ class KTX2Converter:
         """
         try:
             img = Image.open(input_path).convert("RGB")
+            # Flip image vertically to invert Y axis for texture coordinates
+            img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             mips = generate_mips(img)
             ktx_create_info = KtxTextureCreateInfo(
                 gl_internal_format=None,  # let vk_format control format
@@ -75,7 +77,7 @@ class KTX2Converter:
             for level, mip in enumerate(mips):
                 texture.set_image_from_memory(level, 0, 0, mip.tobytes())
             # Компрессия в ETC1S
-            texture.compress_basis(KtxBasisParams(compression_level=2, uastc=False))
+            texture.compress_basis(KtxBasisParams(compression_level=4, uastc=False))
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             texture.write_to_named_file(output_path)
             return True

@@ -20,8 +20,12 @@ class TileViewer {
         this.lastPointer = { x: 0, y: 0 };
         this.zoom = 1;
         this.minZoom = 0.1;
-        this.maxZoom = 32;
+        this.maxZoom = 40;
         this.pan = { x: 0, y: 0 };
+        this.showTileBorders = false;
+        this.showTileCoords = false;
+        this.tileBorders = [];
+        this.tileLabels = [];
 
         // Create renderer DOM element early
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -87,6 +91,22 @@ class TileViewer {
             this.toggleFullscreen();
         });
 
+        // Tile borders toggle
+        const toggleBorders = document.getElementById('toggleBorders');
+        if (toggleBorders) {
+            toggleBorders.addEventListener('click', () => {
+                this.toggleTileBorders();
+            });
+        }
+
+        // Tile coordinates toggle
+        const toggleCoords = document.getElementById('toggleCoords');
+        if (toggleCoords) {
+            toggleCoords.addEventListener('click', () => {
+                this.toggleTileCoords();
+            });
+        }
+
         // 2D mouse/touch controls
         const canvas = this.renderer.domElement;
         canvas.addEventListener('mousedown', (e) => {
@@ -125,7 +145,7 @@ class TileViewer {
 
         // Keyboard controls (only zoom and pan)
         window.addEventListener('keydown', (e) => {
-            switch(e.key.toLowerCase()) {
+            switch (e.key.toLowerCase()) {
                 case '+':
                 case '=':
                     this.zoom = Math.min(this.maxZoom, this.zoom * 1.2);
@@ -160,6 +180,12 @@ class TileViewer {
                 case 'f11':
                     e.preventDefault();
                     this.toggleFullscreen();
+                    break;
+                case 'b':
+                    this.toggleTileBorders();
+                    break;
+                case 'c':
+                    this.toggleTileCoords();
                     break;
             }
         });
@@ -230,7 +256,7 @@ class TileViewer {
 
     parseTileFiles(files) {
         const tileFiles = [];
-        const tilePattern = /.*-tile-(\d+)-(\d+)\.(png|ktx|ktx2)$/i;
+        const tilePattern = /.*_(\d+)_(\d+).*\.(png|ktx|ktx2)$/i;
 
         for (const file of files) {
             const match = file.name.match(tilePattern);
@@ -238,8 +264,8 @@ class TileViewer {
                 tileFiles.push({
                     file: file,
                     name: file.name,
-                    x: parseInt(match[1]),
-                    y: parseInt(match[2]),
+                    x: parseInt(match[1]) - 1, // Convert from 1-based to 0-based indexing
+                    y: parseInt(match[2]) - 1, // Convert from 1-based to 0-based indexing
                     format: match[3].toLowerCase()
                 });
             }
@@ -269,10 +295,22 @@ class TileViewer {
     }
 
     detectFormat(filename) {
-        if (filename.toLowerCase().endsWith('.ktx2')) return 'KTX2';        
+        if (filename.toLowerCase().endsWith('.ktx2')) return 'KTX2';
         if (filename.toLowerCase().endsWith('.ktx')) return 'KTX';
         if (filename.toLowerCase().endsWith('.png')) return 'PNG';
         return 'Unknown';
+    }
+
+    // Calculate tile position in world coordinates
+    calculateTilePosition(x, y) {
+        // Инверсия по y для корректной сшивки: y = gridHeight - 1 - y
+        const invY = this.gridHeight - 1 - y;
+        
+        return {
+            x: x * this.tileSize - (this.gridWidth * this.tileSize) / 2 + this.tileSize / 2,
+            y: invY * this.tileSize - (this.gridHeight * this.tileSize) / 2 + this.tileSize / 2,
+            z: 0
+        };
     }
 
     // Обновляет значение прогресс-бара (0-100)
@@ -288,15 +326,17 @@ class TileViewer {
 
         for (let i = 0; i < tileFiles.length; i += batchSize) {
             const batch = tileFiles.slice(i, Math.min(i + batchSize, tileFiles.length));
-            const promises = batch.map(tileData => this.loadSingleTile(tileData));            
+            const promises = batch.map(tileData => this.loadSingleTile(tileData));
             await Promise.all(promises);
 
             this.updateProgress((i + batchSize) / tileFiles.length * 100);
         }
-    }    async loadSingleTile(tileData) {
+    } 
+    
+    async loadSingleTile(tileData) {
         return new Promise((resolve, reject) => {
             const { file, x, y, format } = tileData;
-            
+
             console.log(`Loading single tile ${x},${y} with format ${format}`);
 
             try {
@@ -327,13 +367,15 @@ class TileViewer {
         };
         reader.onerror = reject;
         reader.readAsDataURL(file);
-    }    loadKTXTile(file, x, y, resolve, reject) {
+    }
+    
+    loadKTXTile(file, x, y, resolve, reject) {
         console.log(`Starting to load KTX tile ${x},${y}:`, {
             fileName: file.name,
             fileSize: file.size,
             fileType: file.type
         });
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
             const buffer = e.target.result;
@@ -381,9 +423,9 @@ class TileViewer {
             resolve();
         };
         reader.readAsArrayBuffer(file);
-    }    createKTXPlaceholder(x, y, errorMsg = 'KTX') {
+    } createKTXPlaceholder(x, y, errorMsg = 'KTX') {
         console.log(`Creating KTX placeholder for tile ${x},${y} with error: ${errorMsg}`);
-        
+
         const canvas = document.createElement('canvas');
         canvas.width = this.tileSize;
         canvas.height = this.tileSize;
@@ -395,11 +437,11 @@ class TileViewer {
         ctx.fillStyle = '#ff6666'; // Red color for error indication
         ctx.font = '16px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('ERROR', this.tileSize/2, this.tileSize/2 - 20);
+        ctx.fillText('ERROR', this.tileSize / 2, this.tileSize / 2 - 20);
         ctx.fillStyle = '#666';
         ctx.font = '12px Arial';
-        ctx.fillText(errorMsg, this.tileSize/2, this.tileSize/2);
-        ctx.fillText(`${x},${y}`, this.tileSize/2, this.tileSize/2 + 20);
+        ctx.fillText(errorMsg, this.tileSize / 2, this.tileSize / 2);
+        ctx.fillText(`${x+1},${y+1}`, this.tileSize / 2, this.tileSize / 2 + 20); // Display 1-based coordinates
 
         const texture = new THREE.CanvasTexture(canvas);
         this.createTileMesh(texture, x, y);
@@ -414,29 +456,105 @@ class TileViewer {
         // Create geometry
         const geometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
         // Инвертируем UV только по Y для BufferGeometry
-        const uv = geometry.attributes.uv;
-        for (let i = 0; i < uv.count; i++) {
-            uv.setY(i, 1 - uv.getY(i));
-        }
-        uv.needsUpdate = true;
+        // const uv = geometry.attributes.uv;
+        // for (let i = 0; i < uv.count; i++) {
+        //     uv.setY(i, 1 - uv.getY(i));
+        // }
+        // uv.needsUpdate = true;
 
         // Create material
-        const material = new THREE.MeshBasicMaterial({ 
+        const material = new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true
         });
 
         // Корректируем позиционирование: (0,0) — top-left, x вправо, y вниз
         const mesh = new THREE.Mesh(geometry, material);
-        // Инверсия по y для корректной сшивки: y = gridHeight - 1 - y
-        const invY = this.gridHeight - 1 - y;
-        mesh.position.x = x * this.tileSize - (this.gridWidth * this.tileSize) / 2 + this.tileSize / 2;
-        mesh.position.y = invY * this.tileSize - (this.gridHeight * this.tileSize) / 2 + this.tileSize / 2;
-        mesh.position.z = 0;
+        
+        // Use the shared position calculation function
+        const position = this.calculateTilePosition(x, y);
+        mesh.position.x = position.x;
+        mesh.position.y = position.y;
+        mesh.position.z = position.z;
 
         // Add to group
         this.tileGroup.add(mesh);
         this.tiles.push(mesh);
+
+        // Create tile border if enabled
+        if (this.showTileBorders) {
+            this.createTileBorder(x, y);
+        }
+
+        // Create tile coordinate label if enabled
+        if (this.showTileCoords) {
+            this.createTileLabel(x, y);
+        }
+    }
+
+    createTileBorder(x, y) {
+        // Create border geometry (wireframe box)
+        const borderGeometry = new THREE.EdgesGeometry(
+            new THREE.PlaneGeometry(this.tileSize, this.tileSize)
+        );
+        
+        const borderMaterial = new THREE.LineBasicMaterial({ 
+            color: 0x00ff00, 
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const borderMesh = new THREE.LineSegments(borderGeometry, borderMaterial);
+        
+        // Use the shared position calculation function
+        const position = this.calculateTilePosition(x, y);
+        borderMesh.position.x = position.x;
+        borderMesh.position.y = position.y;
+        borderMesh.position.z = 0.1; // Slightly above tile
+        
+        this.tileGroup.add(borderMesh);
+        this.tileBorders.push(borderMesh);
+    }
+
+    createTileLabel(x, y) {
+        // Create canvas for text
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw text
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${x+1},${y+1}`, canvas.width / 2, canvas.height / 2 + 5); // Display 1-based coordinates
+        
+        // Create texture and material
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        const labelMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.1
+        });
+        
+        const labelGeometry = new THREE.PlaneGeometry(64, 32);
+        const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+        
+        // Use the shared position calculation function
+        const position = this.calculateTilePosition(x, y);
+        labelMesh.position.x = position.x;
+        labelMesh.position.y = position.y;
+        labelMesh.position.z = 0.2; // Above border
+        
+        this.tileGroup.add(labelMesh);
+        this.tileLabels.push(labelMesh);
     }
 
     clearTiles() {
@@ -454,6 +572,93 @@ class TileViewer {
         this.tiles = [];
         this.loadedTiles = 0;
         this.totalTiles = 0;
+
+        // Clear borders and labels
+        this.clearTileBorders();
+        this.clearTileLabels();
+    }
+
+    clearTileBorders() {
+        while (this.tileBorders.length > 0) {
+            const border = this.tileBorders.pop();
+            this.tileGroup.remove(border);
+            if (border.geometry) border.geometry.dispose();
+            if (border.material) border.material.dispose();
+        }
+    }
+
+    clearTileLabels() {
+        while (this.tileLabels.length > 0) {
+            const label = this.tileLabels.pop();
+            this.tileGroup.remove(label);
+            if (label.geometry) label.geometry.dispose();
+            if (label.material) {
+                if (label.material.map) label.material.map.dispose();
+                label.material.dispose();
+            }
+        }
+    }
+
+    toggleTileBorders() {
+        this.showTileBorders = !this.showTileBorders;
+        
+        const button = document.getElementById('toggleBorders');
+        if (button) {
+            button.classList.toggle('active', this.showTileBorders);
+        }
+        
+        if (this.showTileBorders) {
+            // Create borders for all existing tiles
+            this.recreateTileBorders();
+            this.updateStatus('Tile borders enabled (B to toggle)');
+        } else {
+            // Clear all borders
+            this.clearTileBorders();
+            this.updateStatus('Tile borders disabled (B to toggle)');
+        }
+        
+        setTimeout(() => this.updateStatus('Ready'), 2000);
+    }
+
+    toggleTileCoords() {
+        this.showTileCoords = !this.showTileCoords;
+        
+        const button = document.getElementById('toggleCoords');
+        if (button) {
+            button.classList.toggle('active', this.showTileCoords);
+        }
+        
+        if (this.showTileCoords) {
+            // Create labels for all existing tiles
+            this.recreateTileLabels();
+            this.updateStatus('Tile coordinates enabled (C to toggle)');
+        } else {
+            // Clear all labels
+            this.clearTileLabels();
+            this.updateStatus('Tile coordinates disabled (C to toggle)');
+        }
+        
+        setTimeout(() => this.updateStatus('Ready'), 2000);
+    }
+
+    recreateTileBorders() {
+        this.clearTileBorders();
+        
+        for (let x = 0; x < this.gridWidth; x++) {
+            for (let y = 0; y < this.gridHeight; y++) {
+                this.createTileBorder(x, y);
+            }
+        }
+    }
+
+    recreateTileLabels() {
+        this.clearTileLabels();
+        
+        for (let x = 0; x < this.gridWidth; x++) {
+            for (let y = 0; y < this.gridHeight; y++) {
+                this.createTileLabel(x, y);
+            }
+        }
     }
 
     centerView() {
@@ -549,9 +754,9 @@ class TileViewer {
         const viewY = (center.y - box.min.y) * scale + (canvas.height - size.y * scale) / 2;
         const viewW = distance * scale;
         const viewH = distance * scale;
-          ctx.strokeStyle = '#4CAF50';
+        ctx.strokeStyle = '#4CAF50';
         ctx.lineWidth = 2;
-        ctx.strokeRect(viewX - viewW/2, canvas.height - viewY - viewH/2, viewW, viewH);
+        ctx.strokeRect(viewX - viewW / 2, canvas.height - viewY - viewH / 2, viewW, viewH);
     }
 
     saveViewSettings() {
@@ -610,7 +815,7 @@ class TileViewer {
     showProgress(visible) {
         // Показывает или скрывает прогресс-бар загрузки
         const progressBar = document.getElementById('progressBar');
-        if (!progressBar) return;        
+        if (!progressBar) return;
         progressBar.style.display = visible ? 'block' : 'none';
         if (!visible) {
             this.updateProgress(0);

@@ -1,12 +1,38 @@
-import asyncio
 import math
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 import pymupdf
 from rich.console import Console
 from .ktx import KTX2Converter
+import concurrent.futures
+import multiprocessing
 
 console = Console()
+
+
+def render_one_tile(args):
+    """
+    Render a single tile in a subprocess.
+    Args: (source, page_number, destination_dir, file_name, source_rect, target_dimensions, colorspace, target_format)
+    """
+    source, page_number, destination_dir, file_name, source_rect, target_dimensions, colorspace, target_format = args
+    print(f"[START] Rendering tile: {file_name}")
+    try:
+        render_pdf_rect(
+            source=source,
+            page_number=page_number,
+            destination_dir=destination_dir,
+            file_name=file_name,
+            source_rect=source_rect,
+            target_dimensions=target_dimensions,
+            colorspace=colorspace,
+            target_format=target_format,
+        )
+        print(f"[OK]    Rendered tile: {file_name}")
+        return file_name, True
+    except Exception as e:
+        print(f"[FAIL]  Failed to render tile {file_name}: {e}")
+        return file_name, False
 
 
 def render_pdf_rect(
@@ -114,7 +140,7 @@ def render_pdf_rect(
     img.save(destination_dir / file_name, format=target_format)
 
 
-async def convert(
+def convert(
     source: Path,
     page_index: int,
     destination_dir: Path,
@@ -127,13 +153,13 @@ async def convert(
     **kwarg: dict,
 ) -> None:
     """
-    Asynchronously convert a PDF file to PNG tiles.
+    Convert a PDF file to PNG tiles using parallel processing.
 
     Args:
         source (Path): Path to the source PDF file.
         page_index(int): Page number to export the tile from.
         destination_dir (Path): Directory to save the generated PNG files.
-        target_dimensions (Tuple[int, int]): Dimensions of the whole image (width, height).
+        tile_size (Tuple[int, int]): Dimensions of each tile (width, height).
         tiles (Tuple[int, int]): Number of tiles (n, m).
         preserve_aspect (bool): Whether to preserve the aspect ratio of the source image.
         colorspace (str): Colorspace for the output image. Default is "RGB".
@@ -198,6 +224,8 @@ async def convert(
     base_name = source.stem
     total_tiles = n_tiles * m_tiles
 
+    # Prepare arguments for parallel processing
+    render_args = []
     for x in range(n_tiles):
         for y in range(m_tiles):
             # Calculate precise coordinates to avoid gaps/overlaps
@@ -214,22 +242,36 @@ async def convert(
             else:
                 y1 = round((y + 1) * source_tile_h)
 
-            file_name = f"{base_name}-tile-{x}-{y}.{target_format.lower()}"
-            tile_index = x * m_tiles + y
-            await asyncio.to_thread(
-                render_pdf_rect,
+            file_name = f"{base_name}_{x+1}_{y+1}_image.{target_format.lower()}"
+            
+            render_args.append((
                 source,
                 page_index,
                 destination_dir,
                 file_name,
                 ((x0, y0), (x1, y1)),
                 (tile_w, tile_h),
-                colorspace=colorspace,
-                target_format=target_format,
-            )
+                colorspace,
+                target_format
+            ))
 
+    # Process tiles in parallel using ProcessPoolExecutor
+    num_workers = multiprocessing.cpu_count()
+    print(f"[BATCH] Starting tile rendering: {total_tiles} tiles, {num_workers} workers")
+    
+    results = {}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+        for tile_index, (file_name, success) in enumerate(executor.map(render_one_tile, render_args)):
+            results[file_name] = success
             if progress_callback:
                 progress_callback(tile_index, total_tiles, **kwarg)
+
+    print(f"[BATCH] Done. Success: {sum(results.values())}, Fail: {len(results)-sum(results.values())}")
+    
+    # Check if any tiles failed
+    failed_tiles = [name for name, success in results.items() if not success]
+    if failed_tiles:
+        raise RuntimeError(f"Failed to render {len(failed_tiles)} tiles: {failed_tiles}")
 
 
 def batch_convert_png_to_ktx2(
@@ -237,8 +279,8 @@ def batch_convert_png_to_ktx2(
     output_dir: Path,
     pattern: str = "*.png",
     generate_mipmaps: bool = True,
-    compression: str = None,
-    quality: str = None,
+    compression: Optional[str] = None,
+    quality: Optional[str] = None,
     **kwargs,
 ) -> dict:
     """

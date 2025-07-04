@@ -1,23 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tile Viewer</title>
   <style>
     body {
-      margin: 0;
+         <button id="loadButton">Load Tiles</button>
+        <button id="toggleMinimap">Minimap</button>
+        <button id="fullscreenButton">Fullscreen</button>
+        <button id="toggleBorders">Borders</button>
+        <button id="toggleCoords">Coords</button>
+      </div> margin: 0;
       padding: 0;
       overflow: hidden;
       font-family: Arial, sans-serif;
       background: #000;
     }
-      #container {
+
+    #container {
       position: relative;
       width: 100vw;
       height: 100vh;
     }
-    
+
     #dropZone {
       position: absolute;
       top: 0;
@@ -36,13 +43,13 @@
       pointer-events: none;
       transition: opacity 0.3s ease;
     }
-    
+
     #dropZone.active {
       opacity: 1;
       border-color: #4CAF50;
       background: rgba(76, 175, 80, 0.2);
     }
-    
+
     #controls {
       position: absolute;
       top: 10px;
@@ -54,7 +61,7 @@
       color: white;
       max-width: 300px;
     }
-    
+
     #fileInput {
       margin-bottom: 10px;
       padding: 5px;
@@ -64,7 +71,7 @@
       border-radius: 4px;
       width: 100%;
     }
-    
+
     #loadButton {
       background: #4CAF50;
       color: white;
@@ -74,22 +81,22 @@
       cursor: pointer;
       margin-right: 10px;
     }
-    
+
     #loadButton:hover {
       background: #45a049;
     }
-    
+
     #loadButton:disabled {
       background: #666;
       cursor: not-allowed;
     }
-    
+
     #info {
       margin-top: 10px;
       font-size: 12px;
       line-height: 1.4;
     }
-    
+
     #progress {
       margin-top: 10px;
       width: 100%;
@@ -99,41 +106,42 @@
       overflow: hidden;
       display: none;
     }
-    
+
     #progressBar {
       height: 100%;
       background: #4CAF50;
       width: 0%;
       transition: width 0.3s ease;
     }
-    
+
     #status {
       margin-top: 5px;
       color: #ccc;
       font-size: 11px;
     }
-    
+
     .control-group {
       margin-bottom: 10px;
     }
-    
+
     .control-group label {
       display: block;
       margin-bottom: 5px;
       font-size: 12px;
     }
-    
+
     input[type="range"] {
       width: 100%;
     }
-      #helpText {
+
+    #helpText {
       margin-top: 15px;
       font-size: 11px;
       color: #aaa;
       border-top: 1px solid #444;
       padding-top: 10px;
     }
-    
+
     #minimap {
       position: absolute;
       bottom: 20px;
@@ -146,12 +154,12 @@
       overflow: hidden;
       display: none;
     }
-    
+
     #minimapCanvas {
       width: 100%;
       height: 100%;
     }
-    
+
     #toggleMinimap {
       background: #666;
       color: white;
@@ -162,10 +170,11 @@
       margin-left: 10px;
       font-size: 11px;
     }
-      #toggleMinimap:hover {
+
+    #toggleMinimap:hover {
       background: #888;
     }
-    
+
     #fullscreenButton {
       background: #666;
       color: white;
@@ -176,51 +185,98 @@
       margin-left: 5px;
       font-size: 11px;
     }
-    
+
     #fullscreenButton:hover {
       background: #888;
     }
+
+    #toggleBorders {
+      background: #666;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 5px;
+      font-size: 11px;
+    }
+
+    #toggleBorders:hover {
+      background: #888;
+    }
+
+    #toggleBorders.active {
+      background: #4CAF50;
+    }
+
+    #toggleCoords {
+      background: #666;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 5px;
+      font-size: 11px;
+    }
+
+    #toggleCoords:hover {
+      background: #888;
+    }
+
+    #toggleCoords.active {
+      background: #4CAF50;
+    }
   </style>
 </head>
-<body>  <div id="container">
+
+<body>
+  <div id="container">
     <div id="dropZone">
       <div>Drop tile files here or use the file selector</div>
     </div>
-    
-    <div id="controls">      <div class="control-group">
+
+    <div id="controls">
+      <div class="control-group">
         <label for="fileInput">Select tiles directory:</label>
-        <input type="file" id="fileInput" webkitdirectory multiple accept=".png,.ktx,.ktx2">        <button id="loadButton">Load Tiles</button>
+        <input type="file" id="fileInput" webkitdirectory multiple accept=".png,.ktx,.ktx2"> 
+        <button id="loadButton">Load Tiles</button>
         <button id="toggleMinimap">Minimap</button>
         <button id="fullscreenButton">Fullscreen</button>
+        <button id="toggleBorders">Borders</button>
+        <button id="toggleCoords">Coords</button>
       </div>
-        <div id="info">
+      <div id="info">
         <div>Tiles loaded: <span id="tileCount">0</span></div>
         <div>Grid size: <span id="gridSize">0x0</span></div>
         <div>Format: <span id="format">-</span></div>
         <div>Zoom: <span id="zoomLevel">100%</span></div>
         <div>Position: <span id="position">0, 0</span></div>
       </div>
-      
+
       <div id="progress">
         <div id="progressBar"></div>
       </div>
       <div id="status"></div>
-        <div id="helpText">
+      <div id="helpText">
         <strong>Controls:</strong><br>
         • Mouse drag: Pan<br>
         • Mouse wheel: Zoom<br>
-        • Right click drag: Rotate (3D mode)<br>
-        • R: Reset view<br>
-        • T: Toggle 2D/3D mode<br>
-        • F: Fit to screen<br>        • +/-: Zoom in/out<br>
+        • +/-: Zoom in/out<br>
         • Arrow keys: Pan<br>
+        • B: Toggle tile borders<br>
+        • C: Toggle tile coordinates<br>
         • S: Save view settings<br>
-        • L: Load view settings</div>
+        • L: Load view settings<br>
+        • F11: Toggle fullscreen
+      </div>
     </div>
-    
+
     <div id="minimap">
       <canvas id="minimapCanvas"></canvas>
     </div>
-  </div>  <script type="module" src="/main.js"></script>
+  </div>
+  <script type="module" src="/main.js"></script>
 </body>
+
 </html>

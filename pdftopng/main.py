@@ -83,25 +83,25 @@ def render_tiles(
     tile_width, tile_height = validate_dimensions(tile_size)
     n_tiles, m_tiles = validate_dimensions(tiles)
     console = Console()
-    raw_tiles_dir = destination_dir / "raw_tiles"
+    raw_tiles_dir = destination_dir
     console.print(
         f"Converting {source} to {raw_tiles_dir} with dimensions {tile_width}x{tile_height} "
         f"and tiles {n_tiles}x{m_tiles}."
     )
-    asyncio.run(
-        convert(
-            source,
-            page_index,
-            raw_tiles_dir,
-            (tile_width, tile_height),
-            (n_tiles, m_tiles),
-            preserve_aspect,
-            colorspace,
-            target_format,
-            lambda i, tiles: console.print(f"Rendered {i + 1}/{tiles} tiles."),
-        )
+
+    convert(
+        source,
+        page_index,
+        raw_tiles_dir,
+        (tile_width, tile_height),
+        (n_tiles, m_tiles),
+        preserve_aspect,
+        colorspace,
+        target_format,
+        lambda i, tiles: console.print(f"Rendered {i + 1}/{tiles} tiles."),
     )
-    console.print(f"Done rendering tiles.")
+
+    console.print("Done rendering tiles.")
 
 
 @app.command()
