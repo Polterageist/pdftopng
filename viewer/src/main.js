@@ -5,7 +5,7 @@ class TileViewer {
     constructor() {
         this.scene = null;
         this.camera = null;
-        this.renderer = new THREE.WebGLRenderer({ antialias: false });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.tiles = [];
         this.tileGroup = null;
         this.gridWidth = 0;
@@ -392,10 +392,12 @@ class TileViewer {
                 buffer,
                 (texture) => {
                     console.log(`Successfully loaded KTX2 texture for tile ${x},${y}`, texture);
-                    texture.minFilter = THREE.NearestFilter;
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.generateMipmaps = false;
+                    // For KTX2 with pre-baked mipmaps, don't generate new ones
+                    texture.minFilter = THREE.LinearMipmapLinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false; // Use pre-baked mipmaps from KTX2
                     texture.needsUpdate = true;
+                    texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy()
                     this.createTileMesh(texture, x, y);
                     this.loadedTiles++;
                     resolve();
@@ -423,7 +425,9 @@ class TileViewer {
             resolve();
         };
         reader.readAsArrayBuffer(file);
-    } createKTXPlaceholder(x, y, errorMsg = 'KTX') {
+    } 
+    
+    createKTXPlaceholder(x, y, errorMsg = 'KTX') {
         console.log(`Creating KTX placeholder for tile ${x},${y} with error: ${errorMsg}`);
 
         const canvas = document.createElement('canvas');
@@ -444,13 +448,19 @@ class TileViewer {
         ctx.fillText(`${x+1},${y+1}`, this.tileSize / 2, this.tileSize / 2 + 20); // Display 1-based coordinates
 
         const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
         this.createTileMesh(texture, x, y);
     }
 
     createTileMesh(texture, x, y) {
-        texture.minFilter = THREE.NearestFilter;
-        texture.magFilter = THREE.NearestFilter;
-        texture.generateMipmaps = false;
+        // Apply proper filtering for PNG textures only
+        if (texture.minFilter === THREE.NearestFilter) {
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = true; // Only for PNG textures
+        }
         texture.needsUpdate = true;
 
         // Create geometry

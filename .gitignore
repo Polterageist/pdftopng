@@ -48,5 +48,6 @@ Thumbs.db
 *.zip
 tests_temp/
 output/
+scripts/
 
 node_modules/

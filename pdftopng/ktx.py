@@ -13,7 +13,7 @@ def generate_mips(source: Image.Image) -> List[Image.Image]:
     current = source
     for i in range(1, num_mips):
         new_size = (max(1, current.width // 2), max(1, current.height // 2))
-        current = current.resize(new_size, Image.Resampling.LANCZOS)
+        current = current.resize(new_size, Image.Resampling.NEAREST)
         result.append(current)
     return result
 
@@ -77,7 +77,9 @@ class KTX2Converter:
             for level, mip in enumerate(mips):
                 texture.set_image_from_memory(level, 0, 0, mip.tobytes())
             # Компрессия в ETC1S
-            texture.compress_basis(KtxBasisParams(compression_level=4, uastc=False))
+            params = KtxBasisParams(compression_level=2, uastc=False)
+            params.quality_level = 255
+            texture.compress_basis(params)
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             texture.write_to_named_file(output_path)
             return True
