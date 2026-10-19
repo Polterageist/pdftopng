@@ -1,0 +1,18 @@
+# repo.yaml - Repository specification
+name: pdftopng
+short_name: p2p
+version: 0.1.0
+description: PDF to PNG/KTX converter for tiled rendering
+visibility: public
+
+dependencies: {}
+
+external:
+  python:
+    - pillow
+    - pdf2image
+    - numpy
+
+scripts:
+  run: "python -m pdftopng.main"
+  test: "pytest"
